@@ -1,0 +1,37 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# C#
+csharp-bridge/bin/
+csharp-bridge/obj/
+*.dll
+*.pdb
+*.user
+*.suo
+
+# Java
+java-plugin/target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IPC files
+*.sock
+/tmp/rust-java-mods.sock
+
+# Build artifacts
+dist/
+build/
