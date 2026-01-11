@@ -17,7 +17,7 @@ namespace Carbon.Plugins
     public class RustJavaBridge : CarbonPlugin
     {
         private IpcServer _ipcServer;
-        private bool _isInitialized;
+        private volatile bool _isInitialized;
 
         #region Carbon Hooks
 
@@ -442,43 +442,83 @@ namespace Carbon.Plugins
                 try { File.Delete(_endpoint); } catch { }
             }
 
-            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            socket.Bind(new UnixDomainSocketEndPoint(_endpoint));
-            socket.Listen(5);
-
-            while (_isRunning)
+            Socket socket = null;
+            try
             {
-                try
+                socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+                socket.Bind(new UnixDomainSocketEndPoint(_endpoint));
+                socket.Listen(5);
+
+                while (_isRunning)
                 {
-                    var client = socket.Accept();
-                    ThreadPool.QueueUserWorkItem(_ => HandleClient(new NetworkStream(client, true)));
-                }
-                catch (Exception ex)
-                {
-                    if (_isRunning)
+                    Socket client = null;
+                    try
                     {
-                        _plugin.PrintError($"Unix Socket error: {ex.Message}");
+                        client = socket.Accept();
+                        var clientCopy = client;
+                        client = null; // Ownership transferred
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            try
+                            {
+                                using (var stream = new NetworkStream(clientCopy, true))
+                                {
+                                    HandleClient(stream);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _plugin.PrintError($"Client handling error: {ex.Message}");
+                            }
+                            finally
+                            {
+                                clientCopy?.Dispose();
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        client?.Dispose();
+                        if (_isRunning)
+                        {
+                            _plugin.PrintError($"Unix Socket error: {ex.Message}");
+                        }
                     }
                 }
             }
-
-            socket.Close();
+            finally
+            {
+                socket?.Close();
+                socket?.Dispose();
+            }
         }
 
         private void HandleClient(Stream stream)
         {
             try
             {
+                // Read length with proper loop to handle partial reads
                 var lengthBuffer = new byte[4];
-                var bytesRead = stream.Read(lengthBuffer, 0, 4);
-                if (bytesRead != 4) return;
+                var totalRead = 0;
+                while (totalRead < 4)
+                {
+                    var bytesRead = stream.Read(lengthBuffer, totalRead, 4 - totalRead);
+                    if (bytesRead == 0) return; // Connection closed
+                    totalRead += bytesRead;
+                }
 
                 var length = BitConverter.ToInt32(lengthBuffer, 0);
                 if (length <= 0 || length > 1048576) return; // Max 1MB
 
+                // Read message body with proper loop
                 var buffer = new byte[length];
-                bytesRead = stream.Read(buffer, 0, length);
-                if (bytesRead != length) return;
+                totalRead = 0;
+                while (totalRead < length)
+                {
+                    var bytesRead = stream.Read(buffer, totalRead, length - totalRead);
+                    if (bytesRead == 0) return; // Connection closed
+                    totalRead += bytesRead;
+                }
 
                 var json = Encoding.UTF8.GetString(buffer);
                 _plugin.Puts($"Received from Java: {json.Substring(0, Math.Min(100, json.Length))}...");
