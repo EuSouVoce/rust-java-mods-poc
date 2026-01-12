@@ -1,231 +1,225 @@
-# Carbon Setup Guide
+# Carbon Framework Setup Guide
 
-This guide explains how to set up the Rust-Java Modding Framework with Carbon on a Facepunch Rust server.
+This guide covers installing and configuring the Carbon framework for Rust server modding.
 
-## Prerequisites
+> **Setting up your Rust server from scratch?** See [RUST_SERVER_SETUP.md](RUST_SERVER_SETUP.md) for complete SteamCMD installation, server configuration, and startup scripts.
 
-- A Facepunch Rust dedicated server (Windows or Linux)
-- .NET Framework 4.7.2+ (Windows) or Mono (Linux)
-- Java 11+ JDK
-- Carbon framework installed on your Rust server
+## What is Carbon?
 
-## Step 1: Install Carbon Framework
+Carbon is the modding framework **recommended by Facepunch** for Rust servers. It provides:
 
-1. Download Carbon from the official website: https://carbonmod.gg/
-2. Follow the Carbon installation instructions for your platform:
-   - **Windows**: Extract Carbon files to your Rust server directory
-   - **Linux**: Extract and run the installation script
+- Native integration with Rust game
+- High-performance hook system
+- Active development and support
+- Modern C# 10+ features
+- Better memory management than alternatives
 
-3. Verify Carbon is installed:
-   ```bash
-   # Check for carbon folder in server directory
-   ls -la carbon/
-   ```
+## Installation
 
-4. Start your Rust server once to ensure Carbon loads properly
-
-## Step 2: Build the RustJavaBridge Plugin
-
-### On Windows:
-
-```powershell
-cd csharp-bridge
-dotnet build --configuration Release
-```
-
-### On Linux:
+### Method 1: Automatic (Recommended)
 
 ```bash
-cd csharp-bridge
-dotnet build --configuration Release
+# Download and install Carbon
+cd /path/to/rust-server
+curl -sL https://github.com/CarbonCommunity/Carbon/releases/latest/download/Carbon.Linux.Release.tar.gz | tar -xz
+
+# Or Windows:
+# Download Carbon.Windows.Release.zip from GitHub releases
+# Extract to your Rust server folder
 ```
 
-The compiled plugin will be at:
+### Method 2: Manual
+
+1. Download latest release from [Carbon GitHub](https://github.com/CarbonCommunity/Carbon/releases)
+2. Extract contents to your Rust server root folder
+3. Verify folder structure:
+
 ```
-csharp-bridge/bin/Release/net472/RustJavaBridge.dll
+RustServer/
+├── carbon/
+│   ├── managed/           # Carbon core DLLs
+│   ├── plugins/           # Plugin folder (deploy here)
+│   ├── configs/           # Plugin configs
+│   └── logs/              # Log files
+├── HarmonyMods/
+│   └── Carbon.Loader.dll  # Entry point
+└── RustDedicated.exe      # Server executable
 ```
 
-## Step 3: Deploy the Carbon Plugin
+## Configuration
 
-1. Copy the compiled DLL to your Rust server:
-   ```bash
-   # Windows
-   copy csharp-bridge\bin\Release\net472\RustJavaBridge.dll YourRustServer\carbon\plugins\
+### Server Launch
 
-   # Linux
-   cp csharp-bridge/bin/Release/net472/RustJavaBridge.dll /path/to/rust-server/carbon/plugins/
-   ```
-
-2. Restart your Rust server or use Carbon's hot-reload command:
-   ```
-   c.reload RustJavaBridge
-   ```
-
-3. Check the console for successful initialization:
-   ```
-   ✓ Rust-Java Bridge initialized successfully
-     IPC Endpoint: \\.\pipe\rust-java-mods  (Windows)
-     IPC Endpoint: /tmp/rust-java-mods.sock (Linux)
-     Using Carbon Framework
-   ```
-
-## Step 4: Build the Java API
+Add Carbon to your server startup:
 
 ```bash
-cd java-plugin
-mvn clean package
+# Linux
+./RustDedicated -batchmode +server.hostname "My Server" ...
+
+# Windows
+RustDedicated.exe -batchmode +server.hostname "My Server" ...
 ```
 
-The compiled JAR will be at:
-```
-java-plugin/target/rust-java-mods-api-0.1.0.jar
-```
+Carbon automatically hooks into the game on startup via `Carbon.Loader.dll`.
 
-## Step 5: Create Your First Java Mod
+### Carbon Config (Optional)
 
-1. Create a new Java project
-2. Add the API as a dependency:
-   ```xml
-   <dependency>
-       <groupId>com.rustjavamods</groupId>
-       <artifactId>rust-java-mods-api</artifactId>
-       <version>0.1.0</version>
-       <scope>system</scope>
-       <systemPath>${project.basedir}/lib/rust-java-mods-api-0.1.0.jar</systemPath>
-   </dependency>
-   ```
+Edit `carbon/configs/carbon.cfg`:
 
-3. Create your mod:
-   ```java
-   import com.rustjavamods.RustModAPI;
-   import com.rustjavamods.game.*;
-
-   public class MyFirstMod {
-       public static void main(String[] args) {
-           RustModAPI api = RustModAPI.getInstance();
-           api.initialize();
-
-           RustGameEvents.onPlayerConnected((playerId, playerName, steamId) -> {
-               System.out.println("Welcome, " + playerName + "!");
-           });
-
-           System.out.println("Mod loaded!");
-       }
-   }
-   ```
-
-4. Run your mod:
-   ```bash
-   java -cp rust-java-mods-api-0.1.0.jar:MyMod.jar MyFirstMod
-   ```
-
-## Step 6: Test the Integration
-
-1. Start your Rust server with Carbon and the RustJavaBridge plugin
-2. Start your Java mod application
-3. Connect to your Rust server
-4. Watch the console output on both sides!
-
-**Expected output (Carbon console):**
-```
-[RustJavaBridge] Event: player_connected
-```
-
-**Expected output (Java console):**
-```
-Welcome, YourPlayerName!
-```
-
-## Troubleshooting
-
-### Plugin doesn't load
-
-**Problem**: Carbon doesn't load RustJavaBridge.dll
-
-**Solutions**:
-- Check Carbon logs: `carbon/logs/carbon.log`
-- Verify .NET Framework 4.7.2+ is installed
-- Ensure the DLL is not blocked (Windows: Right-click → Properties → Unblock)
-- Check file permissions on Linux
-
-### IPC Connection Failed
-
-**Problem**: Java mod can't connect to Carbon plugin
-
-**Solutions**:
-- Verify the Carbon plugin initialized successfully
-- Check that the socket/pipe exists:
-  - Windows: Named pipe should be visible
-  - Linux: Check `/tmp/rust-java-mods.sock` exists
-- Ensure no firewall is blocking local connections
-- Try running Java mod as administrator/root
-
-### Hooks not working
-
-**Problem**: Java hooks registered but not executing
-
-**Solutions**:
-- Check that both Carbon plugin and Java mod are running
-- Verify IPC connection is established
-- Enable verbose logging in both components
-- Check Carbon console for hook messages
-
-## Advanced Configuration
-
-### Custom IPC Endpoint
-
-To change the IPC endpoint, edit `RustJavaBridge.cs`:
-
-```csharp
-// Change this line in IpcServer constructor
-_endpoint = _isWindows 
-    ? "my-custom-pipe-name" 
-    : "/tmp/my-custom-socket.sock";
-```
-
-### Performance Tuning
-
-For high-traffic servers, consider:
-- Filtering entity spawn events (already done in plugin)
-- Batching events on Java side
-- Using separate threads for heavy processing
-
-## Carbon Plugin Configuration
-
-Currently no configuration file is needed. Future versions may include:
 ```json
 {
-  "ipc_endpoint": "rust-java-mods",
-  "enable_entity_events": false,
-  "log_level": "info"
+  "Debug": false,
+  "HookValidation": false,
+  "LogFileMode": 1,
+  "AnalyticsEnabled": false
 }
 ```
 
-## Updating
+## Deploying RustJavaBridge Plugin
 
-To update the plugin:
+### Copy the Plugin
 
-1. Pull latest code
-2. Rebuild the Carbon plugin
-3. Stop your Rust server
-4. Replace the DLL in `carbon/plugins/`
-5. Restart the server
+```bash
+# From rust-java-mods-poc directory
+cp csharp-bridge/bin/Release/net472/RustJavaBridge.dll /path/to/rust-server/carbon/plugins/
+```
 
-Or use Carbon's hot-reload:
+### Hot-Reload (No Restart Needed)
+
+In the Rust server console:
+
 ```
 c.reload RustJavaBridge
 ```
 
-## Getting Help
+### Verify Installation
 
-- Check `carbon/logs/carbon.log` for errors
-- Enable verbose logging in both C# and Java
-- Review the ARCHITECTURE.md for technical details
-- Test IPC connection manually (see ARCHITECTURE.md)
+Check server console for:
+
+```
+✓ Rust-Java Bridge initialized successfully
+  IPC Endpoint: \\.\pipe\rust-java-mods   (Windows)
+  IPC Endpoint: /tmp/rust-java-mods.sock  (Linux)
+  Protocol: FlatBuffers (zero-copy)
+  Using Carbon Framework
+```
+
+## Carbon Console Commands
+
+### Plugin Management
+
+```
+c.plugins              # List all loaded plugins
+c.reload PluginName    # Hot-reload a specific plugin
+c.unload PluginName    # Unload a plugin
+c.load PluginName      # Load a plugin from disk
+```
+
+### Debugging
+
+```
+c.hooks                # List registered hooks
+c.find <pattern>       # Search hooks/commands
+```
+
+### RustJavaBridge Status
+
+```
+c.plugins              # Should show "RustJavaBridge" as loaded
+```
+
+## Logs Location
+
+```
+carbon/logs/
+├── carbon.log         # Main Carbon log
+├── carbon.error.log   # Error-specific log
+└── [plugin].log       # Per-plugin logs
+```
+
+### Watch Logs (Linux)
+
+```bash
+tail -f carbon/logs/carbon.log
+```
+
+### Filter RustJavaBridge Logs
+
+```bash
+grep -i "RustJavaBridge" carbon/logs/carbon.log
+```
+
+## Troubleshooting
+
+### Plugin Not Loading
+
+1. Verify DLL is in `carbon/plugins/` folder
+2. Check `carbon.log` for errors
+3. Ensure .NET Framework 4.7.2+ is installed
+4. On Windows, right-click DLL → Properties → Unblock
+
+### Carbon Not Starting
+
+1. Verify `HarmonyMods/Carbon.Loader.dll` exists
+2. Check for conflicts with other mod loaders (Oxide, uMod)
+3. Verify server has correct permissions
+
+### IPC Connection Issues
+
+1. Plugin must initialize first (wait for server startup)
+2. Check firewall settings
+3. On Linux, verify socket permissions:
+
+```bash
+ls -la /tmp/rust-java-mods.sock
+```
+
+## Upgrading Carbon
+
+### Backup First
+
+```bash
+cp -r carbon/configs carbon/configs.backup
+cp -r carbon/plugins carbon/plugins.backup
+```
+
+### Download New Version
+
+```bash
+# Stop server first
+curl -sL https://github.com/CarbonCommunity/Carbon/releases/latest/download/Carbon.Linux.Release.tar.gz | tar -xz
+
+# Restart server
+```
+
+## Performance Tips
+
+- Enable Carbon's `HookValidation: false` for production
+- Monitor `carbon.log` size (rotate if needed)
+- Use `c.unload` to disable unused plugins
+- FlatBuffers protocol minimizes IPC overhead
+
+## Carbon vs Oxide Comparison
+
+| Feature | Carbon | Oxide |
+|---------|--------|-------|
+| Performance | Better | Good |
+| Modern C# | Yes (10+) | Limited |
+| Memory | Lower | Higher |
+| Hot-reload | Yes | Yes |
+| Plugin ecosystem | Growing | Large |
+| Official support | Recommended | Community |
+
+## Resources
+
+- [Carbon Documentation](https://carboncommunity.github.io/)
+- [Carbon GitHub](https://github.com/CarbonCommunity/Carbon)
+- [Carbon Discord](https://discord.gg/carbon)
+- [Rust Wiki - Modding](https://wiki.facepunch.com/rust/modding)
 
 ## Next Steps
 
-- Explore more hooks in `RustGameHooks.java`
-- Check out example mods in `java-plugin/examples/`
-- Read the full API documentation
-- Join the community (if available)
+1. ✅ Carbon installed and configured
+2. ✅ RustJavaBridge plugin deployed
+3. ➡️ Run your Java mod ([QUICKSTART.md](QUICKSTART.md))
+4. ➡️ Read architecture details ([ARCHITECTURE.md](ARCHITECTURE.md))

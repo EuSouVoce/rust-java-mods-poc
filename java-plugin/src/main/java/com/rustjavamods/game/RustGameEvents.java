@@ -1,147 +1,203 @@
 package com.rustjavamods.game;
 
-import com.rustjavamods.GameEvent;
+import RustJavaMods.Protocol.*;
 import com.rustjavamods.RustModAPI;
-import com.google.gson.JsonObject;
 
 /**
- * Rust game-specific events (Facepunch Rust game)
+ * Rust game-specific events (FlatBuffers version).
+ * Zero-copy event handling for maximum performance.
+ * 
+ * Java 21 features:
+ * - Pattern matching instanceof
+ * - var for local type inference
+ * - Cleaner null checks with early returns
  */
-public class RustGameEvents {
+public final class RustGameEvents {
 
-    /**
-     * Player events
-     */
+    private RustGameEvents() {
+    } // Utility class
+
+    // ========== Player Events ==========
+
     public static void onPlayerConnected(PlayerConnectHandler handler) {
         RustModAPI.getInstance().registerEventHandler("player_connected", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("player_name").getAsString(),
-                data.get("steam_id").getAsString()
-            );
+            if (event.payloadType() != EventPayload.PlayerConnectedEvent)
+                return;
+
+            if (event.payload(new PlayerConnectedEvent()) instanceof PlayerConnectedEvent payload) {
+                if (payload.player() instanceof PlayerInfo player) {
+                    handler.handle(
+                            player.playerId(),
+                            player.playerName(),
+                            player.steamId(),
+                            player.position());
+                }
+            }
         });
     }
 
     public static void onPlayerDisconnected(PlayerDisconnectHandler handler) {
         RustModAPI.getInstance().registerEventHandler("player_disconnected", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("reason").getAsString()
-            );
+            if (event.payloadType() != EventPayload.PlayerDisconnectedEvent)
+                return;
+
+            if (event.payload(new PlayerDisconnectedEvent()) instanceof PlayerDisconnectedEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.playerName(),
+                        payload.reason());
+            }
         });
     }
 
     public static void onPlayerDamage(PlayerDamageHandler handler) {
         RustModAPI.getInstance().registerEventHandler("player_damage", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("damage").getAsFloat(),
-                data.get("damage_type").getAsString(),
-                data.get("attacker_id").getAsString()
-            );
+            if (event.payloadType() != EventPayload.PlayerDamageEvent)
+                return;
+
+            if (event.payload(new PlayerDamageEvent()) instanceof PlayerDamageEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.damage(),
+                        payload.damageType(),
+                        payload.attackerId());
+            }
         });
     }
 
     public static void onPlayerDeath(PlayerDeathHandler handler) {
         RustModAPI.getInstance().registerEventHandler("player_death", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("killer_id").getAsString(),
-                data.get("weapon").getAsString()
-            );
+            if (event.payloadType() != EventPayload.PlayerDeathEvent)
+                return;
+
+            if (event.payload(new PlayerDeathEvent()) instanceof PlayerDeathEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.killerId(),
+                        payload.weapon());
+            }
         });
     }
 
     public static void onPlayerRespawn(PlayerRespawnHandler handler) {
         RustModAPI.getInstance().registerEventHandler("player_respawn", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("location").getAsJsonObject()
-            );
+            if (event.payloadType() != EventPayload.PlayerRespawnEvent)
+                return;
+
+            if (event.payload(new PlayerRespawnEvent()) instanceof PlayerRespawnEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.location());
+            }
         });
     }
 
-    /**
-     * Entity events
-     */
-    public static void onEntitySpawned(EntitySpawnHandler handler) {
-        RustModAPI.getInstance().registerEventHandler("entity_spawned", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("entity_id").getAsString(),
-                data.get("entity_type").getAsString(),
-                data.get("location").getAsJsonObject()
-            );
+    // ========== Chat Events ==========
+
+    public static void onChatMessage(ChatMessageHandler handler) {
+        RustModAPI.getInstance().registerEventHandler("chat_message", event -> {
+            if (event.payloadType() != EventPayload.ChatMessageEvent)
+                return;
+
+            if (event.payload(new ChatMessageEvent()) instanceof ChatMessageEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.playerName(),
+                        payload.message());
+            }
         });
     }
 
-    public static void onEntityKilled(EntityKillHandler handler) {
-        RustModAPI.getInstance().registerEventHandler("entity_killed", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("entity_id").getAsString(),
-                data.get("killer_id").getAsString()
-            );
-        });
-    }
+    // ========== Structure Events ==========
 
-    /**
-     * Building events
-     */
     public static void onStructurePlaced(StructurePlaceHandler handler) {
         RustModAPI.getInstance().registerEventHandler("structure_placed", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("structure_type").getAsString(),
-                data.get("location").getAsJsonObject()
-            );
+            if (event.payloadType() != EventPayload.StructurePlacedEvent)
+                return;
+
+            if (event.payload(new StructurePlacedEvent()) instanceof StructurePlacedEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.structureType(),
+                        payload.location());
+            }
         });
     }
 
     public static void onStructureDestroyed(StructureDestroyHandler handler) {
         RustModAPI.getInstance().registerEventHandler("structure_destroyed", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("structure_id").getAsString(),
-                data.get("destroyer_id").getAsString()
-            );
+            if (event.payloadType() != EventPayload.StructureDestroyedEvent)
+                return;
+
+            if (event.payload(new StructureDestroyedEvent()) instanceof StructureDestroyedEvent payload) {
+                handler.handle(
+                        payload.structureId(),
+                        payload.destroyerId());
+            }
         });
     }
 
-    /**
-     * Chat events
-     */
-    public static void onChatMessage(ChatMessageHandler handler) {
-        RustModAPI.getInstance().registerEventHandler("chat_message", event -> {
-            JsonObject data = event.getData();
-            handler.handle(
-                data.get("player_id").getAsString(),
-                data.get("player_name").getAsString(),
-                data.get("message").getAsString()
-            );
+    // ========== Entity Events ==========
+
+    public static void onEntitySpawned(EntitySpawnHandler handler) {
+        RustModAPI.getInstance().registerEventHandler("entity_spawned", event -> {
+            if (event.payloadType() != EventPayload.EntitySpawnedEvent)
+                return;
+
+            if (event.payload(new EntitySpawnedEvent()) instanceof EntitySpawnedEvent payload) {
+                handler.handle(
+                        payload.entityId(),
+                        payload.entityType(),
+                        payload.location());
+            }
         });
     }
 
-    // Handler interfaces
+    public static void onEntityKilled(EntityKillHandler handler) {
+        RustModAPI.getInstance().registerEventHandler("entity_killed", event -> {
+            if (event.payloadType() != EventPayload.EntityKilledEvent)
+                return;
+
+            if (event.payload(new EntityKilledEvent()) instanceof EntityKilledEvent payload) {
+                handler.handle(
+                        payload.entityId(),
+                        payload.entityType(),
+                        payload.killerId());
+            }
+        });
+    }
+
+    // ========== Crafting Events ==========
+
+    public static void onItemCrafted(ItemCraftedHandler handler) {
+        RustModAPI.getInstance().registerEventHandler("item_crafted", event -> {
+            if (event.payloadType() != EventPayload.ItemCraftedEvent)
+                return;
+
+            if (event.payload(new ItemCraftedEvent()) instanceof ItemCraftedEvent payload) {
+                handler.handle(
+                        payload.playerId(),
+                        payload.itemName(),
+                        payload.amount());
+            }
+        });
+    }
+
+    // ========== Handler Interfaces ==========
+
     @FunctionalInterface
     public interface PlayerConnectHandler {
-        void handle(String playerId, String playerName, String steamId);
+        void handle(String playerId, String playerName, String steamId, Vec3 position);
     }
 
     @FunctionalInterface
     public interface PlayerDisconnectHandler {
-        void handle(String playerId, String reason);
+        void handle(String playerId, String playerName, String reason);
     }
 
     @FunctionalInterface
     public interface PlayerDamageHandler {
-        void handle(String playerId, float damage, String damageType, String attackerId);
+        void handle(String playerId, float damage, byte damageType, String attackerId);
     }
 
     @FunctionalInterface
@@ -151,22 +207,17 @@ public class RustGameEvents {
 
     @FunctionalInterface
     public interface PlayerRespawnHandler {
-        void handle(String playerId, JsonObject location);
+        void handle(String playerId, Vec3 location);
     }
 
     @FunctionalInterface
-    public interface EntitySpawnHandler {
-        void handle(String entityId, String entityType, JsonObject location);
-    }
-
-    @FunctionalInterface
-    public interface EntityKillHandler {
-        void handle(String entityId, String killerId);
+    public interface ChatMessageHandler {
+        void handle(String playerId, String playerName, String message);
     }
 
     @FunctionalInterface
     public interface StructurePlaceHandler {
-        void handle(String playerId, String structureType, JsonObject location);
+        void handle(String playerId, String structureType, Vec3 location);
     }
 
     @FunctionalInterface
@@ -175,7 +226,17 @@ public class RustGameEvents {
     }
 
     @FunctionalInterface
-    public interface ChatMessageHandler {
-        void handle(String playerId, String playerName, String message);
+    public interface EntitySpawnHandler {
+        void handle(String entityId, String entityType, Vec3 location);
+    }
+
+    @FunctionalInterface
+    public interface EntityKillHandler {
+        void handle(String entityId, String entityType, String killerId);
+    }
+
+    @FunctionalInterface
+    public interface ItemCraftedHandler {
+        void handle(String playerId, String itemName, int amount);
     }
 }

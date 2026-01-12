@@ -15,6 +15,10 @@
       <HintPath>lib\Carbon.Common.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Carbon.Core">
+      <HintPath>lib\Carbon.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Facepunch.Rust">
       <HintPath>lib\Facepunch.Rust.dll</HintPath>
       <Private>false</Private>
@@ -30,7 +34,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Google.FlatBuffers" Version="23.5.26" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" />
   </ItemGroup>
 
 </Project>

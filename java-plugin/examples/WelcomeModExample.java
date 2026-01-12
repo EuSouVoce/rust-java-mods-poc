@@ -1,35 +1,54 @@
 package com.rustjavamods.examples;
 
+import RustJavaMods.Protocol.*;
 import com.rustjavamods.RustModAPI;
 import com.rustjavamods.game.RustGameEvents;
 import com.rustjavamods.game.RustGameHooks;
-import com.google.gson.JsonObject;
 
 /**
- * Example Rust game mod - Welcome plugin
- * Demonstrates hook registration and event handling for Facepunch Rust game
+ * Example Rust game mod - Welcome plugin (FlatBuffers version).
+ * Demonstrates high-performance hook and event handling.
+ * 
+ * Java 21 features used:
+ * - Virtual Threads (via RustModAPI)
+ * - Pattern matching switch
+ * - var for local type inference
  */
-public class WelcomeModExample {
+public final class WelcomeModExample {
 
     public static void main(String[] args) {
-        System.out.println("=== Rust Game Modding Example (Facepunch Rust) ===\n");
+        System.out.println("=== Rust Game Modding Example (Java 21 + FlatBuffers) ===\n");
 
         // Initialize the modding API
-        RustModAPI api = RustModAPI.getInstance();
+        var api = RustModAPI.getInstance();
         api.initialize();
 
-        // Register event handlers for Rust game events
+        // Register event handlers
         registerEventHandlers();
 
-        // Register hooks to modify Rust game behavior
+        // Register hooks
         registerHooks();
 
-        System.out.println("\n✓ Mod loaded successfully!");
-        System.out.println("✓ Listening for Rust game events...\n");
+        System.out.println("""
 
-        // Keep the application running
+                ✓ Mod loaded successfully!
+                ✓ Using FlatBuffers protocol (zero-copy)
+                ✓ Using Virtual Threads (Java 21)
+                ✓ Listening for Rust game events...
+                """);
+
+        // Keep the application running using virtual thread
+        Thread.ofVirtual().start(() -> {
+            try {
+                Thread.sleep(Long.MAX_VALUE);
+            } catch (InterruptedException e) {
+                api.shutdown();
+            }
+        });
+
+        // Main thread waits
         try {
-            Thread.sleep(Long.MAX_VALUE);
+            Thread.currentThread().join();
         } catch (InterruptedException e) {
             api.shutdown();
         }
@@ -39,59 +58,53 @@ public class WelcomeModExample {
         System.out.println("--- Registering Event Handlers ---");
 
         // Welcome message when player connects
-        RustGameEvents.onPlayerConnected((playerId, playerName, steamId) -> {
-            System.out.println(String.format(
-                "[EVENT] Player connected: %s (ID: %s, Steam: %s)",
-                playerName, playerId, steamId
-            ));
-            
-            // Send welcome message to player (would use game API)
+        RustGameEvents.onPlayerConnected((playerId, playerName, steamId, position) -> {
+            System.out.printf("[EVENT] Player connected: %s (ID: %s, Steam: %s)%n",
+                    playerName, playerId, steamId);
+            if (position != null) {
+                System.out.printf("  → Position: (%.1f, %.1f, %.1f)%n",
+                        position.x(), position.y(), position.z());
+            }
             System.out.println("  → Sending welcome message to " + playerName);
+
+            var result = RustModAPI.getInstance().sendChat(playerId, "Welcome, " + playerName + "! (Java mod)");
+            if (!result.success()) {
+                System.err.println("  → Failed to send welcome message: " + result.errorMessage());
+            }
         });
 
         // Farewell message when player disconnects
-        RustGameEvents.onPlayerDisconnected((playerId, reason) -> {
-            System.out.println(String.format(
-                "[EVENT] Player disconnected: %s (Reason: %s)",
-                playerId, reason
-            ));
-        });
+        RustGameEvents.onPlayerDisconnected((playerId, playerName, reason) -> System.out
+                .printf("[EVENT] Player disconnected: %s (%s)%n", playerName, reason));
 
-        // Log player damage events
+        // Log player damage events with damage type
         RustGameEvents.onPlayerDamage((playerId, damage, damageType, attackerId) -> {
-            System.out.println(String.format(
-                "[EVENT] Player %s took %.1f %s damage from %s",
-                playerId, damage, damageType, attackerId
-            ));
+            var typeName = getDamageTypeName(damageType);
+            System.out.printf("[EVENT] Player %s took %.1f %s damage from %s%n",
+                    playerId, damage, typeName, attackerId);
         });
 
         // Log player deaths
-        RustGameEvents.onPlayerDeath((playerId, killerId, weapon) -> {
-            System.out.println(String.format(
-                "[EVENT] Player %s was killed by %s using %s",
-                playerId, killerId, weapon
-            ));
-        });
+        RustGameEvents.onPlayerDeath(
+                (playerId, killerId, weapon) -> System.out.printf("[EVENT] Player %s was killed by %s using %s%n",
+                        playerId, killerId, weapon));
 
-        // Log chat messages
+        // Log chat messages with command detection
         RustGameEvents.onChatMessage((playerId, playerName, message) -> {
-            System.out.println(String.format(
-                "[CHAT] %s: %s",
-                playerName, message
-            ));
-            
-            // Check for commands
-            if (message.startsWith("/help")) {
-                System.out.println("  → Sending help information to " + playerName);
+            System.out.printf("[CHAT] %s: %s%n", playerName, message);
+
+            if (message.startsWith("/")) {
+                var command = message.split(" ")[0];
+                System.out.println("  → Command detected: " + command);
             }
         });
 
         // Log structure placement
         RustGameEvents.onStructurePlaced((playerId, structureType, location) -> {
-            System.out.println(String.format(
-                "[EVENT] Player %s placed %s at %s",
-                playerId, structureType, location
-            ));
+            var locationStr = location != null
+                    ? "(%.1f, %.1f, %.1f)".formatted(location.x(), location.y(), location.z())
+                    : "unknown";
+            System.out.printf("[EVENT] Player %s placed %s at %s%n", playerId, structureType, locationStr);
         });
 
         System.out.println("✓ Event handlers registered\n");
@@ -100,102 +113,102 @@ public class WelcomeModExample {
     private static void registerHooks() {
         System.out.println("--- Registering Game Hooks ---");
 
-        // Hook player connections to allow/deny
+        // Hook player connections
         RustGameHooks.onPlayerConnecting((playerId, playerName, steamId, ipAddress) -> {
-            System.out.println(String.format(
-                "[HOOK] Player connecting: %s from %s",
-                playerName, ipAddress
-            ));
+            System.out.printf("[HOOK] Player connecting: %s from %s%n", playerName, ipAddress);
 
-            // Check if player is banned (example)
+            // Example: deny players with "Banned" in name
             if (playerName.contains("Banned")) {
-                JsonObject deny = new JsonObject();
-                deny.addProperty("deny", true);
-                deny.addProperty("reason", "You are banned from this server");
                 System.out.println("  → Denying connection for " + playerName);
-                return deny;
+                return RustGameHooks.denyConnection("You are banned from this server");
             }
 
-            // Allow connection
             System.out.println("  → Allowing connection for " + playerName);
-            return null;
+            return null; // Allow
         });
 
-        // Hook player damage to modify or cancel
-        RustGameHooks.onPlayerTakingDamage((playerId, damage, damageType) -> {
-            System.out.println(String.format(
-                "[HOOK] Player %s taking %.1f %s damage",
-                playerId, damage, damageType
-            ));
+        // Hook player damage with Java 21 switch expression
+        RustGameHooks.onPlayerTakingDamage((playerId, damage, damageType, attackerId) -> {
+            var typeName = getDamageTypeName(damageType);
+            System.out.printf("[HOOK] Player %s taking %.1f %s damage%n", playerId, damage, typeName);
 
-            // Reduce fall damage by 50% (example)
-            if (damageType.equals("Fall")) {
-                JsonObject modified = new JsonObject();
-                modified.addProperty("damage", damage * 0.5f);
-                System.out.println("  → Reducing fall damage by 50%");
-                return modified;
-            }
-
-            // God mode for admins (example)
-            if (playerId.contains("admin")) {
-                JsonObject cancel = new JsonObject();
-                cancel.addProperty("cancel", true);
-                System.out.println("  → Canceling damage (admin god mode)");
-                return cancel;
-            }
-
-            return null;
+            // Handle different damage scenarios
+            return switch (damageType) {
+                case DamageType.Fall -> {
+                    System.out.println("  → Reducing fall damage by 50%");
+                    yield RustGameHooks.modifyDamage(damage * 0.5f);
+                }
+                default -> {
+                    // God mode for admins
+                    if (playerId.contains("admin")) {
+                        System.out.println("  → Canceling damage (admin god mode)");
+                        yield RustGameHooks.cancelDamage();
+                    }
+                    yield null; // Default behavior
+                }
+            };
         });
 
-        // Hook chat messages to filter/modify
+        // Hook chat messages with profanity filter
         RustGameHooks.onPlayerChat((playerId, message) -> {
-            System.out.println(String.format(
-                "[HOOK] Player %s chatting: %s",
-                playerId, message
-            ));
+            System.out.printf("[HOOK] Player %s chatting: %s%n", playerId, message);
 
-            // Block spam (example)
+            // Block spam
             if (message.contains("spam")) {
-                JsonObject block = new JsonObject();
-                block.addProperty("block", true);
                 System.out.println("  → Blocking spam message");
-                return block;
+                return RustGameHooks.blockChat();
             }
 
-            // Auto-replace profanity (example)
-            if (message.toLowerCase().contains("badword")) {
-                JsonObject modified = new JsonObject();
-                modified.addProperty("message", message.replace("badword", "***"));
+            // Filter profanity using case-insensitive check
+            var lowerMessage = message.toLowerCase();
+            if (lowerMessage.contains("badword")) {
+                var filtered = message.replaceAll("(?i)badword", "***");
                 System.out.println("  → Filtered profanity");
-                return modified;
+                return RustGameHooks.modifyChat(filtered);
             }
 
             return null;
         });
 
-        // Hook building to control where players can build
+        // Hook building - prevent in spawn area
         RustGameHooks.onPlayerBuild((playerId, structureType, location) -> {
-            System.out.println(String.format(
-                "[HOOK] Player %s attempting to build %s",
-                playerId, structureType
-            ));
+            System.out.printf("[HOOK] Player %s attempting to build %s%n", playerId, structureType);
 
-            // Prevent building in certain areas (example)
-            double x = location.get("x").getAsDouble();
-            double z = location.get("z").getAsDouble();
-            
-            if (Math.abs(x) < 100 && Math.abs(z) < 100) {
-                JsonObject deny = new JsonObject();
-                deny.addProperty("allow", false);
+            // Prevent building in spawn area using pattern matching
+            if (location instanceof Vec3 loc && Math.abs(loc.x()) < 100 && Math.abs(loc.z()) < 100) {
                 System.out.println("  → Denying build (spawn area)");
-                return deny;
+                return RustGameHooks.denyBuild();
             }
 
-            JsonObject allow = new JsonObject();
-            allow.addProperty("allow", true);
-            return allow;
+            return null; // Allow
         });
 
         System.out.println("✓ Game hooks registered\n");
+    }
+
+    /**
+     * Convert damage type byte to human-readable name using Java 21 switch
+     * expression.
+     */
+    private static String getDamageTypeName(byte damageType) {
+        return switch (damageType) {
+            case DamageType.Bullet -> "Bullet";
+            case DamageType.Slash -> "Slash";
+            case DamageType.Blunt -> "Blunt";
+            case DamageType.Fall -> "Fall";
+            case DamageType.Radiation -> "Radiation";
+            case DamageType.Bite -> "Bite";
+            case DamageType.Stab -> "Stab";
+            case DamageType.Explosion -> "Explosion";
+            case DamageType.Heat -> "Heat";
+            case DamageType.Cold -> "Cold";
+            case DamageType.Bleeding -> "Bleeding";
+            case DamageType.Poison -> "Poison";
+            case DamageType.Hunger -> "Hunger";
+            case DamageType.Thirst -> "Thirst";
+            case DamageType.Drowned -> "Drowned";
+            case DamageType.ElectricShock -> "Electric Shock";
+            default -> "Generic";
+        };
     }
 }

@@ -2,211 +2,271 @@
 
 ## Overview
 
-This framework enables Java-based modding for Facepunch's Rust game using **Carbon** (the official modding framework) as the bridge:
+This framework enables Java 21-based modding for Facepunch's Rust game using **Carbon** (the recommended modding framework) with **FlatBuffers** for zero-copy IPC and **Virtual Threads** for scalable concurrency:
 
 1. **Carbon C# Plugin** - Integrates with Rust game, captures hooks and events
-2. **IPC Layer** - OS-native communication (Named Pipes/Unix Sockets)
-3. **Java Plugin API** - Type-safe modding interface
+2. **FlatBuffers IPC** - Zero-copy binary serialization over Named Pipes/Unix Sockets
+3. **Java 21 Plugin API** - Type-safe modding interface with Virtual Threads
 
-## Why Carbon?
+## Why Java 21?
 
-Carbon is the **official modding framework** recommended on the Facepunch Rust wiki. It provides:
-- Native integration with Rust game
-- High performance hook system
-- Active development and support
-- No third-party dependencies (unlike Oxide/uMod)
+Java 21 provides significant concurrency and language improvements:
+
+| Feature | Benefit |
+| ------- | ------- |
+| Virtual Threads | Lightweight threads (~KB stack), perfect for I/O-bound IPC |
+| Pattern Matching | Cleaner FlatBuffer payload extraction |
+| Switch Expressions | Concise message dispatch |
+| Records | Immutable data carriers for hook context |
+| Sequenced Collections | Ordered data handling |
+
+## Why FlatBuffers?
+
+FlatBuffers provides significant performance benefits over JSON:
+
+| Aspect | JSON (old) | FlatBuffers (new) |
+| ------ | ---------- | ----------------- |
+| Parsing | Full parse required | Zero-copy access |
+| Memory | String allocations | Direct buffer read |
+| Latency | ~1-5ms per message | ~0.01-0.1ms |
+| Type safety | Runtime errors | Compile-time schema |
+| Binary size | Verbose text | Compact binary |
 
 ## Communication Flow
 
-### Request-Response Pattern (Named Pipes / Unix Sockets)
+### Request-Response Pattern (Hooks)
 
 ```
-Java Plugin                Carbon Plugin           Rust Game
-    │                          │                       │
-    │── RegisterHook ──────────>│                       │
-    │                          │<── Game Event ────────│
-    │                          │ [Process Hook]        │
-    │<──────── Result ──────────│                       │
-    │                          │── Return to Game ─────>│
+Java Plugin      Carbon Plugin             Rust Game
+  │                    │                       │
+  │                    │<── OnEntityTakeDamage─│
+  │                    │  [Build FlatBuffer]   │
+  │<── GameHook ───────│                       │
+  │ [Zero-copy read]   │                       │
+  │── HookResponse ───>│                       │
+  │                    │  [Apply modification] │
+  │                    │──── Return value ────>│
 ```
 
 ### Event Pattern (Fire-and-Forget)
 
 ```
-Rust Game Event            Carbon Plugin          Java Plugin
-    │                          │                       │
-    │── Player Damage ─────────>│                       │
-    │                          │ [Forward via IPC] ────>│
-    │                          │                       │ [Event Handler]
-    │                          │                       │
+Rust Event       Carbon Plugin           Java Plugin
+  │                    │                     │
+  │── Player Death ───>│                     │
+  │                    │ [Build FlatBuffer]  │
+  │                    │── GameEvent ───────>│
+  │                    │                     │ [Zero-copy read]
+  │                    │                     │ [No response]
 ```
 
-## OS Auto-Detection
+## FlatBuffers Schema
 
-The Carbon plugin automatically selects the appropriate IPC mechanism:
+The protocol is defined in `schema/rust_java_mods.fbs`:
+
+```flatbuffers
+// Message wrapper
+table Message {
+    msg_type: MessageType;
+    payload: MessagePayload;
+}
+
+// Events (fire-and-forget)
+table GameEvent {
+    event_name: string;
+    timestamp: ulong;
+    payload: EventPayload;  // Union of event types
+}
+
+// Hooks (request-response)
+table GameHook {
+    hook_id: uint;          // Correlation ID
+    hook_name: string;
+    timestamp: ulong;
+    payload: HookPayload;   // Union of hook types
+}
+
+// Hook responses
+table HookResponse {
+    hook_id: uint;          // Matching correlation ID
+    payload: HookResponsePayload;
+}
+```
+
+### Damage Types (Enum)
+
+```flatbuffers
+enum DamageType : byte {
+    Unknown, Generic, Bullet, Slash, Blunt, Fall,
+    Radiation, Bite, Stab, Explosion, Heat, Cold,
+    Bleeding, Poison, Hunger, Thirst, Drowned, ElectricShock
+}
+```
+
+### Vector3 (Struct)
+
+```flatbuffers
+struct Vec3 {
+    x: float;
+    y: float;
+    z: float;
+}
+```
+
+## IPC Protocol
+
+### Message Framing
+
+All messages use length-prefixed framing:
+
+```
+┌──────────────┬─────────────────────────┐
+│ Length (4B)  │ FlatBuffer payload      │
+│ Little-endian│ (variable length)       │
+└──────────────┴─────────────────────────┘
+```
+
+### OS Auto-Detection
 
 - **Windows**: Named Pipes (`\\.\pipe\rust-java-mods`)
 - **Linux**: Unix Domain Sockets (`/tmp/rust-java-mods.sock`)
 
-This is handled using `RuntimeInformation.IsOSPlatform()`.
-
-## IPC Message Format
-
-All messages use JSON (Newtonsoft.Json) for serialization:
-
-**Event Message:**
-```json
-{
-  "Type": "Event",
-  "Name": "player_damage",
-  "Data": {
-    "player_id": "76561198012345678",
-    "damage": 25.5,
-    "damage_type": "Bullet",
-    "attacker_id": "76561198087654321"
-  }
-}
-```
-
-**Hook Message:**
-```json
-{
-  "Type": "Hook",
-  "Method": "player_taking_damage",
-  "Data": {
-    "player_id": "76561198012345678",
-    "damage": 25.5,
-    "damage_type": "Fall"
-  }
-}
-```
-
-**Hook Response:**
-```json
-{
-  "damage": 12.75,
-  "cancel": false
-}
-```
-
-## Carbon Plugin Hooks
-
-The RustJavaBridge plugin hooks into these Carbon events:
-
-### Player Hooks
-- `OnPlayerConnected` - Player joins
-- `OnPlayerDisconnected` - Player leaves
-- `OnPlayerChat` - Chat messages
-- `OnPlayerDeath` - Player death
-- `OnPlayerRespawned` - Player respawn
-- `OnEntityTakeDamage` - Damage events
-
-### Building Hooks
-- `OnEntityBuilt` - Structure placement
-- `OnStructureDemolish` - Structure destruction
-
-### Entity Hooks
-- `OnEntitySpawned` - Entity spawning
-- `OnEntityKill` - Entity destruction
-
-### Loot/Craft Hooks
-- `OnLootPlayer` - Looting events
-- `OnItemCraftFinished` - Crafting completion
+Selected via `RuntimeInformation.IsOSPlatform()`.
 
 ## Threading Model
 
-### Carbon Plugin (C# in Rust Game)
+### Carbon Plugin (C#)
 
-- **Main Unity Thread**: All game hooks execute here (Carbon requirement)
-- **IPC Server Thread**: Background thread for accepting connections
-- **Client Handler Threads**: ThreadPool for handling individual client requests
+```
+┌─────────────────────────────────────────────┐
+│ Main Unity Thread                           │
+│  - All Carbon hooks execute here            │
+│  - FlatBuffer building (pooled builders)    │
+│  - Hook timeout enforcement (100ms)         │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ IPC Server Thread                           │
+│  - Accept connections                       │
+│  - Read hook responses                      │
+│  - Signal pending hooks                     │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ ThreadPool (Client Handlers)                │
+│  - Per-client message handling              │
+│  - Concurrent client support                │
+└─────────────────────────────────────────────┘
+```
 
 ### Java Plugin
 
-- **Main Thread**: Plugin initialization
-- **Event Dispatch Thread Pool**: Handles event callbacks
-- **Hook Execution Thread Pool**: Executes hook handlers
-- **IPC Client Thread**: Maintains connection to Carbon plugin
+```
+┌─────────────────────────────────────────────┐
+│ Main Thread                                 │
+│  - Plugin initialization                    │
+│  - Register handlers                        │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ Virtual Thread: carbon-bridge-connection    │
+│  - Connection management                    │
+│  - Read incoming messages                   │
+└─────────────────────────────────────────────┘
+         │
+         ▼ (spawns per message)
+┌─────────────────────────────────────────────┐
+│ Virtual Thread: message-handler             │
+│  - Dispatch to event/hook handlers          │
+│  - Non-blocking, scales to thousands        │
+└─────────────────────────────────────────────┘
+```
 
 ## Hook System
 
-Hooks allow intercepting and modifying game behavior **before** it happens:
+Hooks intercept game behavior **before** it happens:
+
+1. Game calls Carbon hook (e.g., `OnEntityTakeDamage`)
+2. Carbon builds FlatBuffer with hook data
+3. Carbon sends to Java via IPC (with 100ms timeout)
+4. Java handler reads data (zero-copy)
+5. Java builds response FlatBuffer (if modifying)
+6. Carbon applies modification or uses default
+7. Game continues
+
+### Example: Fall Damage Reduction
 
 ```
-1. Game calls Carbon hook (e.g., OnEntityTakeDamage)
-2. Carbon plugin forwards to Java via IPC (synchronous)
-3. Java processes hook and returns modification
-4. Carbon plugin applies modification
-5. Game continues with modified values
-```
-
-Example: Reducing fall damage by 50%
-
-```
-Rust Game: Player takes 100 fall damage
-    ↓
-Carbon: OnEntityTakeDamage hook triggered
-    ↓
-Java: Hook handler receives damage=100, type="Fall"
-Java: Returns {damage: 50}
-    ↓
-Carbon: Modifies damage to 50
-    ↓
-Rust Game: Player takes 50 damage instead
+Rust: Player takes 100 fall damage
+  ↓
+Carbon: OnEntityTakeDamage triggered
+  ↓
+Carbon: Build PlayerTakingDamageHook FlatBuffer
+        { hook_id: 42, damage: 100, damage_type: Fall }
+  ↓
+Java: Receive and read (zero-copy)
+Java: Build PlayerDamageResponse { modified_damage: 50 }
+  ↓
+Carbon: Receive response, match hook_id: 42
+Carbon: Scale damage to 50
+  ↓
+Rust: Player takes 50 damage
 ```
 
 ## Event System
 
-Events provide notifications **after** something happens (fire-and-forget):
+Events notify **after** something happens (no response):
 
+1. Game event occurs
+2. Carbon captures via hook
+3. Carbon builds FlatBuffer
+4. Carbon sends to Java (fire-and-forget)
+5. Java handlers process asynchronously
+
+## Memory Efficiency
+
+### C# Side
+
+```csharp
+// Thread-local pooled builders
+private readonly ThreadLocal<FlatBufferBuilder> _builderPool = 
+    new ThreadLocal<FlatBufferBuilder>(() => new FlatBufferBuilder(1024));
+
+private FlatBufferBuilder GetBuilder() {
+    var builder = _builderPool.Value;
+    builder.Clear();  // Reset for reuse
+    return builder;
+}
 ```
-1. Game event occurs (e.g., player dies)
-2. Carbon hook captures it
-3. Carbon plugin sends event to Java (async, no wait)
-4. Java event handlers process asynchronously
-5. No response expected or needed
+
+### Java Side
+
+```java
+// Thread-local pooled builders
+private static final ThreadLocal<FlatBufferBuilder> builderPool = 
+    ThreadLocal.withInitial(() -> new FlatBufferBuilder(1024));
+
+public static FlatBufferBuilder getBuilder() {
+    FlatBufferBuilder builder = builderPool.get();
+    builder.clear();
+    return builder;
+}
 ```
-
-## Performance Optimization
-
-### Low Latency
-
-- Direct OS-level IPC (no network stack)
-- JSON serialization (fast with Newtonsoft.Json)
-- Connection pooling
-- Background threads for I/O
-
-### Hook Performance
-
-- Hooks are synchronous but fast (< 1ms typical)
-- Minimal serialization overhead
-- Direct socket communication
-- No reflection or dynamic code generation
-
-### Event Performance
-
-- Fire-and-forget (zero wait time)
-- Events batched when possible
-- Background thread processing
-- No game thread blocking
-
-### Memory Efficiency
-
-- Reusable buffers for IPC
-- Efficient JSON serialization
-- Connection pooling
-- Minimal allocations in hot paths
 
 ## Deployment
 
-### Carbon Plugin Deployment
+### Carbon Plugin
 
 ```
 RustServer/
 ├── carbon/
 │   ├── plugins/
 │   │   └── RustJavaBridge.dll    ← Deploy here
-│   └── ...
+│   └── logs/
+│       └── carbon.log            ← Check for errors
 └── ...
 ```
 
@@ -214,89 +274,98 @@ RustServer/
 
 ```
 rust-java-mods-poc/
+├── schema/
+│   ├── rust_java_mods.fbs        # Protocol definition
+│   ├── generate.sh               # Linux code generator
+│   └── generate.bat              # Windows code generator
 ├── csharp-bridge/
-│   ├── RustJavaBridge.cs          # Carbon plugin source
-│   ├── RustJavaModsBridge.csproj  # C# project
-│   └── lib/                       # Carbon/Unity references
+│   ├── RustJavaBridge.cs         # Carbon plugin
+│   ├── RustJavaModsBridge.csproj # Project file
+│   └── Generated/                # Generated FlatBuffers C#
 ├── java-plugin/
-│   ├── src/main/java/             # Java API source
-│   ├── examples/                  # Example mods
-│   └── pom.xml                    # Maven config
-└── README.md
+│   ├── src/main/java/
+│   │   ├── com/rustjavamods/     # API classes
+│   │   └── RustJavaMods/Protocol/# Generated FlatBuffers Java
+│   ├── examples/                 # Example mods
+│   └── pom.xml                   # Maven config
+├── scripts/
+│   ├── dev-server.sh            # Dev environment
+│   ├── watch-java.sh            # Java HMR
+│   └── rebuild-bridge.sh        # C# rebuild
+└── build.sh                     # Full build
 ```
 
 ## Security Considerations
 
 - IPC restricted to localhost only
 - File permissions (0600) on Unix sockets
-- Input validation on all boundaries
+- FlatBuffer verifier validates message integrity
+- Hook timeout prevents game hangs (100ms)
 - No arbitrary code execution
-- Carbon's security model applies
-- Plugin runs in game process sandbox
 
 ## Debugging
 
-### Carbon Plugin Debugging
+### Carbon Plugin
 
 ```bash
-# Watch Carbon console output
+# Watch Carbon logs
 tail -f carbon/logs/carbon.log
 
-# Enable verbose logging in RustJavaBridge.cs
-_plugin.Puts("Debug message");
+# Enable verbose logging (in code)
+_plugin.Puts("Debug: received hook response");
 ```
 
-### Java Plugin Debugging
+### Java Plugin
 
 ```bash
-# Run with logging
+# Run with debug output
 java -Djava.util.logging.level=FINE -jar plugin.jar
 
-# Connect debugger on port 5005
+# Remote debugging
 java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005 -jar plugin.jar
 ```
 
-### Testing IPC
+### Schema Debugging
 
 ```bash
-# Test Named Pipe (Windows PowerShell)
-$pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", "rust-java-mods", "InOut")
-$pipe.Connect()
-
-# Test Unix Socket (Linux)
-nc -U /tmp/rust-java-mods.sock
+# Dump FlatBuffer contents (requires flatc)
+flatc --json --raw-binary schema/rust_java_mods.fbs -- message.bin
 ```
 
 ## Future Enhancements
 
-- Bi-directional API calls (Java → Rust game)
-- Plugin hot-reload without server restart
-- Built-in metrics and monitoring
-- Web dashboard for plugin management
-- Multiple Java plugin support
-- Plugin dependency management
-- Automatic Carbon version detection
+- [ ] Bi-directional API calls (Java → Rust game commands)
+- [ ] Multiple Java plugin support
+- [ ] Schema versioning/evolution
+- [ ] Built-in metrics (latency, throughput)
+- [ ] Web dashboard for monitoring
+- [ ] Plugin dependency management
 
-## Carbon Compatibility
+## Compatibility
 
-- **Target**: Carbon 1.x and 2.x
+- **Carbon**: 1.x and 2.x
 - **Unity**: 2021.3 LTS (used by Rust)
 - **.NET**: Framework 4.7.2+
-- **Rust Game**: Latest stable version
+- **Java**: 17+
+- **FlatBuffers**: 24.3.25
+- **Rust Game**: Latest stable
 
 ## Troubleshooting
 
 ### Plugin not loading
-- Check `carbon/logs/carbon.log` for errors
-- Verify .NET Framework 4.7.2+ installed
-- Ensure DLL is in `carbon/plugins/` directory
+
+- Check `carbon/logs/carbon.log`
+- Verify .NET Framework 4.7.2+
+- Ensure DLL is in `carbon/plugins/`
 
 ### IPC Connection Failed
+
 - Check firewall settings
-- Verify socket/pipe path is accessible
-- Ensure Carbon plugin initialized successfully
+- Verify socket/pipe path exists
+- Ensure Carbon plugin initialized
 
 ### Hooks not firing
+
 - Verify Java plugin is connected
-- Check Carbon console for hook messages
-- Enable verbose logging in both layers
+- Check hook registration logs
+- Enable verbose logging

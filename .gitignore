@@ -1,7 +1,6 @@
-# Rust
-target/
-Cargo.lock
-**/*.rs.bk
+# Rust Dedicated Server
+
+dev-server/
 
 # C#
 csharp-bridge/bin/
@@ -27,6 +26,7 @@ java-plugin/target/
 # OS
 .DS_Store
 Thumbs.db
+$*
 
 # IPC files
 *.sock
@@ -35,3 +35,7 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+
+# references and tools
+references/
+tools/

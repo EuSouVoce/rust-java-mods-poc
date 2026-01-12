@@ -1,150 +1,238 @@
 package com.rustjavamods.game;
 
-import com.rustjavamods.GameHook;
+import RustJavaMods.Protocol.*;
+import com.google.flatbuffers.FlatBufferBuilder;
 import com.rustjavamods.HookContext;
 import com.rustjavamods.RustModAPI;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+
+import java.nio.ByteBuffer;
 
 /**
- * Rust game-specific hooks (Facepunch Rust game)
- * These hooks allow intercepting and modifying game behavior
+ * Rust game-specific hooks (FlatBuffers version).
+ * Zero-copy hook handling for maximum performance.
+ * 
+ * Java 21 features:
+ * - Pattern matching instanceof
+ * - var for local type inference
+ * - Switch expressions
  */
-public class RustGameHooks {
+public final class RustGameHooks {
+
+    private RustGameHooks() {
+    } // Utility class
+
+    // ========== Player Hooks ==========
 
     /**
-     * Hook for when a player attempts to connect to the server
-     * Return null to allow, or JsonObject with "deny" and "reason" to reject
+     * Hook for when a player attempts to connect to the server.
+     * Return null to allow, or use denyConnection() to reject.
      */
-    public static void onPlayerConnecting(PlayerConnectingHook hook) {
+    public static void onPlayerConnecting(PlayerConnectingHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_connecting", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            String playerName = params.get("player_name").getAsString();
-            String steamId = params.get("steam_id").getAsString();
-            String ipAddress = params.get("ip_address").getAsString();
-            
-            return hook.handle(playerId, playerName, steamId, ipAddress);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerConnectingHook)
+                return null;
+
+            if (gameHook.payload(new PlayerConnectingHook()) instanceof PlayerConnectingHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.playerName(),
+                        payload.steamId(),
+                        payload.ipAddress());
+            }
+            return null;
         });
     }
 
     /**
-     * Hook for when a player takes damage
-     * Can modify damage amount or cancel damage
+     * Hook for when a player takes damage.
+     * Return null for default, modifyDamage() to change, or cancelDamage() to
+     * prevent.
      */
-    public static void onPlayerTakingDamage(PlayerDamageHook hook) {
+    public static void onPlayerTakingDamage(PlayerDamageHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_taking_damage", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            float damage = params.get("damage").getAsFloat();
-            String damageType = params.get("damage_type").getAsString();
-            
-            return hook.handle(playerId, damage, damageType);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerTakingDamageHook)
+                return null;
+
+            if (gameHook.payload(new PlayerTakingDamageHook()) instanceof PlayerTakingDamageHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.damage(),
+                        payload.damageType(),
+                        payload.attackerId());
+            }
+            return null;
         });
     }
 
     /**
-     * Hook for when a player attempts to chat
-     * Can modify message or block it
+     * Hook for when a player attempts to chat.
+     * Return null for default, blockChat() to prevent, or modifyChat() to change.
      */
-    public static void onPlayerChat(PlayerChatHook hook) {
+    public static void onPlayerChat(PlayerChatHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_chat", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            String message = params.get("message").getAsString();
-            
-            return hook.handle(playerId, message);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerChatHook)
+                return null;
+
+            if (gameHook.payload(new PlayerChatHook()) instanceof PlayerChatHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.message());
+            }
+            return null;
         });
     }
 
     /**
-     * Hook for when a player attempts to build
-     * Can allow or deny construction
+     * Hook for when a player attempts to build.
+     * Return null to allow, or denyBuild() to prevent.
      */
-    public static void onPlayerBuild(PlayerBuildHook hook) {
+    public static void onPlayerBuild(PlayerBuildHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_build", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            String structureType = params.get("structure_type").getAsString();
-            JsonObject location = params.get("location").getAsJsonObject();
-            
-            return hook.handle(playerId, structureType, location);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerBuildHook)
+                return null;
+
+            if (gameHook.payload(new PlayerBuildHook()) instanceof PlayerBuildHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.structureType(),
+                        payload.location());
+            }
+            return null;
         });
     }
 
     /**
-     * Hook for when a player loots a container
+     * Hook for when a player loots a container.
+     * Return null to allow, or denyLoot() to prevent.
      */
-    public static void onPlayerLoot(PlayerLootHook hook) {
+    public static void onPlayerLoot(PlayerLootHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_loot", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            String containerId = params.get("container_id").getAsString();
-            
-            return hook.handle(playerId, containerId);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerLootHook)
+                return null;
+
+            if (gameHook.payload(new PlayerLootHook()) instanceof PlayerLootHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.containerId());
+            }
+            return null;
         });
     }
 
     /**
-     * Hook for when a player crafts an item
+     * Hook for when a player crafts an item.
+     * Return null for default, or a response to modify/cancel.
      */
-    public static void onPlayerCraft(PlayerCraftHook hook) {
+    public static void onPlayerCraft(PlayerCraftHookHandler hook) {
         RustModAPI.getInstance().registerHook("player_craft", context -> {
-            JsonObject params = context.getParameters();
-            String playerId = params.get("player_id").getAsString();
-            String itemName = params.get("item_name").getAsString();
-            int amount = params.get("amount").getAsInt();
-            
-            return hook.handle(playerId, itemName, amount);
+            var gameHook = context.getRawHook();
+            if (gameHook.payloadType() != HookPayload.PlayerCraftHook)
+                return null;
+
+            if (gameHook.payload(new PlayerCraftHook()) instanceof PlayerCraftHook payload) {
+                return hook.handle(
+                        payload.playerId(),
+                        payload.itemName(),
+                        payload.amount());
+            }
+            return null;
         });
     }
 
-    // Hook interfaces
+    // ========== Response Builders ==========
+
+    /** Deny player connection with reason */
+    public static ByteBuffer denyConnection(String reason) {
+        var builder = RustModAPI.getBuilder();
+        var reasonOffset = builder.createString(reason);
+        var responseOffset = PlayerConnectingResponse.createPlayerConnectingResponse(builder, false, reasonOffset);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Modify damage amount */
+    public static ByteBuffer modifyDamage(float newDamage) {
+        var builder = RustModAPI.getBuilder();
+        var responseOffset = PlayerDamageResponse.createPlayerDamageResponse(builder, newDamage, false);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Cancel all damage */
+    public static ByteBuffer cancelDamage() {
+        var builder = RustModAPI.getBuilder();
+        var responseOffset = PlayerDamageResponse.createPlayerDamageResponse(builder, 0, true);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Block chat message */
+    public static ByteBuffer blockChat() {
+        var builder = RustModAPI.getBuilder();
+        var responseOffset = PlayerChatResponse.createPlayerChatResponse(builder, 0, true);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Modify chat message content */
+    public static ByteBuffer modifyChat(String newMessage) {
+        var builder = RustModAPI.getBuilder();
+        var msgOffset = builder.createString(newMessage);
+        var responseOffset = PlayerChatResponse.createPlayerChatResponse(builder, msgOffset, false);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Deny building placement */
+    public static ByteBuffer denyBuild() {
+        var builder = RustModAPI.getBuilder();
+        var responseOffset = PlayerBuildResponse.createPlayerBuildResponse(builder, false);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    /** Deny container looting */
+    public static ByteBuffer denyLoot() {
+        var builder = RustModAPI.getBuilder();
+        var responseOffset = PlayerLootResponse.createPlayerLootResponse(builder, false);
+        builder.finish(responseOffset);
+        return builder.dataBuffer();
+    }
+
+    // ========== Hook Interfaces ==========
+
     @FunctionalInterface
-    public interface PlayerConnectingHook {
-        /**
-         * @return null to allow connection, or JsonObject with deny reason
-         */
-        JsonElement handle(String playerId, String playerName, String steamId, String ipAddress);
+    public interface PlayerConnectingHookHandler {
+        ByteBuffer handle(String playerId, String playerName, String steamId, String ipAddress);
     }
 
     @FunctionalInterface
-    public interface PlayerDamageHook {
-        /**
-         * @return JsonObject with modified "damage" value, or "cancel": true
-         */
-        JsonElement handle(String playerId, float damage, String damageType);
+    public interface PlayerDamageHookHandler {
+        ByteBuffer handle(String playerId, float damage, byte damageType, String attackerId);
     }
 
     @FunctionalInterface
-    public interface PlayerChatHook {
-        /**
-         * @return JsonObject with modified "message" or "block": true
-         */
-        JsonElement handle(String playerId, String message);
+    public interface PlayerChatHookHandler {
+        ByteBuffer handle(String playerId, String message);
     }
 
     @FunctionalInterface
-    public interface PlayerBuildHook {
-        /**
-         * @return JsonObject with "allow": true/false
-         */
-        JsonElement handle(String playerId, String structureType, JsonObject location);
+    public interface PlayerBuildHookHandler {
+        ByteBuffer handle(String playerId, String structureType, Vec3 location);
     }
 
     @FunctionalInterface
-    public interface PlayerLootHook {
-        /**
-         * @return JsonObject with "allow": true/false
-         */
-        JsonElement handle(String playerId, String containerId);
+    public interface PlayerLootHookHandler {
+        ByteBuffer handle(String playerId, String containerId);
     }
 
     @FunctionalInterface
-    public interface PlayerCraftHook {
-        /**
-         * @return JsonObject with modified "amount" or "cancel": true
-         */
-        JsonElement handle(String playerId, String itemName, int amount);
+    public interface PlayerCraftHookHandler {
+        ByteBuffer handle(String playerId, String itemName, int amount);
     }
 }

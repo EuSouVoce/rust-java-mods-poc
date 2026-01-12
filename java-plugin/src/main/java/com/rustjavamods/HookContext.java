@@ -1,37 +1,40 @@
 package com.rustjavamods;
 
-import com.google.gson.JsonObject;
-
-import java.util.Map;
+import RustJavaMods.Protocol.GameHook;
 
 /**
- * Context for hook execution with Rust game data
+ * Context for hook execution with Rust game data (FlatBuffers).
+ * Provides zero-copy access to hook parameters.
+ * 
+ * Java 21: Using record for immutable data carrier.
  */
-public class HookContext {
-    private final String hookName;
-    private final JsonObject parameters;
-    private final Map<String, String> metadata;
-
-    public HookContext(String hookName, JsonObject parameters, Map<String, String> metadata) {
-        this.hookName = hookName;
-        this.parameters = parameters;
-        this.metadata = metadata;
-    }
+public record HookContext(GameHook hook) {
 
     public String getHookName() {
-        return hookName;
+        return hook.hookName();
     }
 
-    public JsonObject getParameters() {
-        return parameters;
+    public long getHookId() {
+        return hook.hookId();
     }
 
-    public Map<String, String> getMetadata() {
-        return metadata;
+    public long getTimestamp() {
+        return hook.timestamp();
+    }
+
+    public byte getPayloadType() {
+        return hook.payloadType();
+    }
+
+    /**
+     * Get the raw hook for direct FlatBuffer access
+     */
+    public GameHook getRawHook() {
+        return hook;
     }
 
     @Override
     public String toString() {
-        return "HookContext{hookName='" + hookName + "', parameters=" + parameters + ", metadata=" + metadata + '}';
+        return "HookContext[hookName='%s', hookId=%d]".formatted(getHookName(), getHookId());
     }
 }

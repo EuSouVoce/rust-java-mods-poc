@@ -1,0 +1,314 @@
+// FlatBuffers schema for Rust-Java Mods IPC
+// High-performance zero-copy serialization for game modding
+// 
+// Compile with:
+//   flatc --csharp -o ../csharp-bridge/Generated schema/rust_java_mods.fbs
+//   flatc --java -o ../java-plugin/src/main/java schema/rust_java_mods.fbs
+
+namespace RustJavaMods.Protocol;
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+struct Vec3 {
+    x: float;
+    y: float;
+    z: float;
+}
+
+enum MessageType : byte {
+    Event = 0,
+    Hook = 1,
+    HookResponse = 2,
+    Command = 3,
+    CommandResponse = 4
+}
+
+enum DamageType : byte {
+    Unknown = 0,
+    Generic = 1,
+    Bullet = 2,
+    Slash = 3,
+    Blunt = 4,
+    Fall = 5,
+    Radiation = 6,
+    Bite = 7,
+    Stab = 8,
+    Explosion = 9,
+    Heat = 10,
+    Cold = 11,
+    Bleeding = 12,
+    Poison = 13,
+    Hunger = 14,
+    Thirst = 15,
+    Drowned = 16,
+    ElectricShock = 17
+}
+
+// ============================================================================
+// Player Data
+// ============================================================================
+
+table PlayerInfo {
+    player_id: string (required);
+    player_name: string;
+    steam_id: string;
+    ip_address: string;
+    position: Vec3;
+}
+
+// ============================================================================
+// Event Messages (Fire-and-forget, Carbon -> Java)
+// ============================================================================
+
+table PlayerConnectedEvent {
+    player: PlayerInfo (required);
+}
+
+table PlayerDisconnectedEvent {
+    player_id: string (required);
+    player_name: string;
+    reason: string;
+}
+
+table PlayerDamageEvent {
+    player_id: string (required);
+    damage: float;
+    damage_type: DamageType;
+    attacker_id: string;
+}
+
+table PlayerDeathEvent {
+    player_id: string (required);
+    killer_id: string;
+    weapon: string;
+}
+
+table PlayerRespawnEvent {
+    player_id: string (required);
+    location: Vec3;
+}
+
+table ChatMessageEvent {
+    player_id: string (required);
+    player_name: string;
+    message: string (required);
+}
+
+table StructurePlacedEvent {
+    player_id: string (required);
+    structure_type: string (required);
+    location: Vec3;
+}
+
+table StructureDestroyedEvent {
+    structure_id: string (required);
+    destroyer_id: string;
+}
+
+table EntitySpawnedEvent {
+    entity_id: string (required);
+    entity_type: string (required);
+    location: Vec3;
+}
+
+table EntityKilledEvent {
+    entity_id: string (required);
+    entity_type: string;
+    killer_id: string;
+}
+
+table ItemCraftedEvent {
+    player_id: string (required);
+    item_name: string (required);
+    amount: int;
+}
+
+union EventPayload {
+    PlayerConnectedEvent,
+    PlayerDisconnectedEvent,
+    PlayerDamageEvent,
+    PlayerDeathEvent,
+    PlayerRespawnEvent,
+    ChatMessageEvent,
+    StructurePlacedEvent,
+    StructureDestroyedEvent,
+    EntitySpawnedEvent,
+    EntityKilledEvent,
+    ItemCraftedEvent
+}
+
+table GameEvent {
+    event_name: string (required);
+    timestamp: ulong;
+    payload: EventPayload;
+}
+
+// ============================================================================
+// Hook Messages (Request-Response, Carbon <-> Java)
+// ============================================================================
+
+table PlayerConnectingHook {
+    player_id: string (required);
+    player_name: string;
+    steam_id: string;
+    ip_address: string;
+}
+
+table PlayerTakingDamageHook {
+    player_id: string (required);
+    damage: float;
+    damage_type: DamageType;
+    attacker_id: string;
+}
+
+table PlayerChatHook {
+    player_id: string (required);
+    message: string (required);
+}
+
+table PlayerBuildHook {
+    player_id: string (required);
+    structure_type: string (required);
+    location: Vec3;
+}
+
+table PlayerLootHook {
+    player_id: string (required);
+    container_id: string (required);
+}
+
+table PlayerCraftHook {
+    player_id: string (required);
+    item_name: string (required);
+    amount: int;
+}
+
+union HookPayload {
+    PlayerConnectingHook,
+    PlayerTakingDamageHook,
+    PlayerChatHook,
+    PlayerBuildHook,
+    PlayerLootHook,
+    PlayerCraftHook
+}
+
+table GameHook {
+    hook_id: uint;           // Correlation ID for response matching
+    hook_name: string (required);
+    timestamp: ulong;
+    payload: HookPayload;
+}
+
+// ============================================================================
+// Hook Responses (Java -> Carbon)
+// ============================================================================
+
+table PlayerConnectingResponse {
+    allow: bool = true;
+    deny_reason: string;
+}
+
+table PlayerDamageResponse {
+    modified_damage: float;
+    cancel: bool = false;
+}
+
+table PlayerChatResponse {
+    modified_message: string;
+    block: bool = false;
+}
+
+table PlayerBuildResponse {
+    allow: bool = true;
+}
+
+table PlayerLootResponse {
+    allow: bool = true;
+}
+
+table PlayerCraftResponse {
+    modified_amount: int;
+    cancel: bool = false;
+}
+
+union HookResponsePayload {
+    PlayerConnectingResponse,
+    PlayerDamageResponse,
+    PlayerChatResponse,
+    PlayerBuildResponse,
+    PlayerLootResponse,
+    PlayerCraftResponse
+}
+
+table HookResponse {
+    hook_id: uint;           // Correlation ID matching the request
+    payload: HookResponsePayload;
+}
+
+// ============================================================================
+// Command Messages (Java -> Carbon, for game API calls)
+// ============================================================================
+
+table SendChatCommand {
+    player_id: string;       // null = broadcast
+    message: string (required);
+}
+
+table KickPlayerCommand {
+    player_id: string (required);
+    reason: string;
+}
+
+table TeleportPlayerCommand {
+    player_id: string (required);
+    location: Vec3 (required);
+}
+
+table GiveItemCommand {
+    player_id: string (required);
+    item_name: string (required);
+    amount: int = 1;
+}
+
+union CommandPayload {
+    SendChatCommand,
+    KickPlayerCommand,
+    TeleportPlayerCommand,
+    GiveItemCommand
+}
+
+table GameCommand {
+    command_id: uint;        // Correlation ID for response
+    command_name: string (required);
+    payload: CommandPayload;
+}
+
+table CommandResponse {
+    command_id: uint;
+    success: bool;
+    error_message: string;
+}
+
+// ============================================================================
+// Root Message Wrapper
+// ============================================================================
+
+union MessagePayload {
+    GameEvent,
+    GameHook,
+    HookResponse,
+    GameCommand,
+    CommandResponse
+}
+
+table Message {
+    msg_type: MessageType;
+    payload: MessagePayload;
+}
+
+root_type Message;
+
+// File identifier for validation (4 chars)
+file_identifier "RJMS";
